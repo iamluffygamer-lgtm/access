@@ -1,0 +1,164 @@
+{
+  "https://example.com": {
+    "url": "https://example.com",
+    "scannedAt": "2026-09-19T05:00:00.000Z",
+    "score": 79,
+    "counts": { "critical": 0, "serious": 1, "moderate": 1, "minor": 1 },
+    "violations": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "description": "Ensures the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/color-contrast",
+        "nodes": [{ "target": "p", "html": "<p>This domain is for use in illustrative examples...</p>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Low-vision and color-blind readers may not be able to read this text because it doesn't stand out enough from its background.",
+          "fix": "Darken the text color or lighten the background until the contrast ratio is at least 4.5:1 for normal text."
+        }
+      },
+      {
+        "id": "region",
+        "impact": "moderate",
+        "description": "Ensures all page content is contained by landmarks",
+        "help": "All page content should be contained by landmarks",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/region",
+        "nodes": [{ "target": "body > div", "html": "<div>...</div>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Screen reader users rely on landmarks like <main> and <nav> to jump around a page quickly; without them, they have to listen through everything in order.",
+          "fix": "Wrap the primary content in a <main> element instead of a plain <div>."
+        }
+      },
+      {
+        "id": "heading-order",
+        "impact": "minor",
+        "description": "Ensures the order of headings is semantically correct",
+        "help": "Heading levels should only increase by one",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/heading-order",
+        "nodes": [{ "target": "h3", "html": "<h3>More information...</h3>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Skipping from an h1 straight to an h3 breaks the outline screen reader users navigate by, making the page structure confusing.",
+          "fix": "Change this heading to h2, or add the missing h2 level before it."
+        }
+      }
+    ]
+  },
+  "https://demo-local-bakery.example": {
+    "url": "https://demo-local-bakery.example",
+    "scannedAt": "2026-09-19T05:00:00.000Z",
+    "score": 41,
+    "counts": { "critical": 2, "serious": 3, "moderate": 2, "minor": 1 },
+    "violations": [
+      {
+        "id": "image-alt",
+        "impact": "critical",
+        "description": "Ensures <img> elements have alternate text or a role of none or presentation",
+        "help": "Images must have alternate text",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/image-alt",
+        "nodes": [
+          { "target": "img.hero-photo", "html": "<img class=\"hero-photo\" src=\"bakery.jpg\">" },
+          { "target": "img.menu-item", "html": "<img class=\"menu-item\" src=\"croissant.jpg\">" }
+        ],
+        "affectedCount": 6,
+        "explanation": {
+          "plainEnglish": "Blind and low-vision visitors using a screen reader get nothing but 'image' announced for every photo, including the menu photos they'd need to decide what to order.",
+          "fix": "Add descriptive alt text, e.g. alt=\"Fresh almond croissant on a wooden board\"."
+        }
+      },
+      {
+        "id": "label",
+        "impact": "critical",
+        "description": "Ensures every form element has a label",
+        "help": "Form elements must have labels",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/label",
+        "nodes": [{ "target": "input#order-name", "html": "<input id=\"order-name\" type=\"text\">" }],
+        "affectedCount": 3,
+        "explanation": {
+          "plainEnglish": "Screen reader users hear only 'edit text' with no indication of what to type into this field, making the order form unusable without sight.",
+          "fix": "Add a <label for=\"order-name\">Your name</label> tied to the input's id."
+        }
+      },
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "description": "Ensures the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/color-contrast",
+        "nodes": [{ "target": ".price-tag", "html": "<span class=\"price-tag\">$4.50</span>" }],
+        "affectedCount": 12,
+        "explanation": {
+          "plainEnglish": "The light grey prices on a white background are hard to read for anyone with low vision, and nearly invisible in bright sunlight on mobile.",
+          "fix": "Darken .price-tag to at least #595959 on a white background to hit a 4.5:1 contrast ratio."
+        }
+      },
+      {
+        "id": "link-name",
+        "impact": "serious",
+        "description": "Ensures links have discernible text",
+        "help": "Links must have discernible text",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/link-name",
+        "nodes": [{ "target": "a.icon-link", "html": "<a class=\"icon-link\" href=\"/cart\"><svg></svg></a>" }],
+        "affectedCount": 4,
+        "explanation": {
+          "plainEnglish": "An icon-only cart link with no text announces as just 'link' to screen readers, giving no clue where it goes.",
+          "fix": "Add visually-hidden text: <a href=\"/cart\"><svg aria-hidden=\"true\"></svg><span class=\"sr-only\">View cart</span></a>."
+        }
+      },
+      {
+        "id": "button-name",
+        "impact": "serious",
+        "description": "Ensures buttons have discernible text",
+        "help": "Buttons must have discernible text",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/button-name",
+        "nodes": [{ "target": "button.close-modal", "html": "<button class=\"close-modal\">×</button>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "A '×' symbol alone isn't reliably announced by screen readers, so users may not realize this button closes the popup.",
+          "fix": "Add aria-label=\"Close\" to the button."
+        }
+      },
+      {
+        "id": "html-has-lang",
+        "impact": "moderate",
+        "description": "Ensures every HTML document has a lang attribute",
+        "help": "<html> element must have a lang attribute",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/html-has-lang",
+        "nodes": [{ "target": "html", "html": "<html>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Without a declared language, screen readers may use the wrong pronunciation rules for the entire page.",
+          "fix": "Add lang=\"en\" (or the appropriate language code) to the <html> tag."
+        }
+      },
+      {
+        "id": "landmark-one-main",
+        "impact": "moderate",
+        "description": "Ensures the document has a main landmark",
+        "help": "Document should have one main landmark",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/landmark-one-main",
+        "nodes": [{ "target": "body", "html": "<body>" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Without a <main> landmark, screen reader users lose the fastest way to skip straight to the page's actual content.",
+          "fix": "Wrap the core page content in a single <main> element."
+        }
+      },
+      {
+        "id": "meta-viewport",
+        "impact": "minor",
+        "description": "Ensures <meta name=\"viewport\"> does not disable text scaling and zooming",
+        "help": "Zooming and scaling must not be disabled",
+        "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/meta-viewport",
+        "nodes": [{ "target": "meta[name=viewport]", "html": "<meta name=\"viewport\" content=\"user-scalable=no\">" }],
+        "affectedCount": 1,
+        "explanation": {
+          "plainEnglish": "Disabling pinch-to-zoom blocks low-vision users from enlarging text on mobile, one of their most basic accommodations.",
+          "fix": "Remove user-scalable=no from the viewport meta tag."
+        }
+      }
+    ]
+  }
+}
