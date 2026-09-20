@@ -1,44 +1,339 @@
 # AccessLens
+
 **Web Application Risk & Accessibility Engineering Platform**
 
-> **Find risks. Understand them. Fix them. Prove they’re fixed.**
+> Find risks. Understand them. Fix them. Prove they're fixed.
 
-Most tools stop at telling developers what's broken. **AccessLens** closes the loop. It acts as an intelligent, context-aware copilot that crawls your real rendered web application, discovers both accessibility and security risks, explains their impact, generates developer-ready remediation patches, and verifies that the fix actually worked across subsequent scans.
+Most scanners stop at telling developers what's broken. AccessLens closes the loop: it crawls your real, rendered web application with a headless browser, discovers both **accessibility** and **security** risks, explains their impact in plain English, generates developer-ready fixes with an AI copilot, and tracks whether a re-scan proves the fix actually worked.
+
+---
+
+## Table of contents
+
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [API reference](#api-reference)
+- [Scan modes](#scan-modes)
+- [Scoring](#scoring)
+- [Demo mode](#demo-mode)
+- [Tech stack](#tech-stack)
+- [Safety & scope](#safety--scope)
+- [Roadmap](#roadmap)
+
+---
+
+## How it works
+
+1. You give AccessLens a URL.
+2. A headless Chromium instance (Puppeteer) loads the page for real — not just fetches the raw HTML — and waits until the app is actually done rendering (see [Application Readiness Engine](#features)).
+3. While the page loads, AccessLens passively records every network request/response, every cookie, every console error, and the full text of every JavaScript bundle.
+4. Once the page is ready, it runs two scanners in parallel:
+   - **axe-core** for WCAG/accessibility violations.
+   - A custom **security engine** that inspects headers, cookies, CORS, transport, and JS payloads.
+5. Findings are normalized into a common shape, deduplicated, scored, and streamed back to the dashboard live via Server-Sent Events.
+6. Optionally, an LLM (Claude) turns the raw findings into plain-English explanations and copy-pasteable code fixes.
+7. Scan again after fixing something, and the dashboard can tell you whether a finding is now resolved.
 
 ## Features
 
-### 1. Advanced Readiness Engine
-The scanner doesn't just rely on `networkidle2` or fixed timeouts. It uses a custom **Application Readiness Engine** that tracks DOM mutations, active network requests, and loading spinners. It can intelligently wait for Single Page Applications (React, Vue, Angular) to finish rendering meaningful content before it begins auditing.
+### Application Readiness Engine
+Rather than trusting `networkidle2` or a fixed timeout, the scanner injects a `MutationObserver` and polls for a composite "ready" signal: the DOM has stopped mutating, the network has gone quiet, no loading spinner or "Loading…"/"Please wait" text is visible, and there's meaningful content on the page. This lets it audit client-rendered React/Vue/Angular apps instead of an empty shell. It also detects login walls and gives up gracefully rather than spinning for the full timeout.
 
-### 2. Multi-Page Deep Crawling
-AccessLens can perform a **Deep Scan** where it extracts same-origin links and organically crawls up to 10 pages in the background, aggressively deduplicating findings across the entire reachable attack surface.
+### Multi-page deep crawling
+In **Deep scan** mode, AccessLens extracts same-origin links from the page and crawls up to 10 pages, aggregating and deduplicating findings across the whole reachable surface.
 
-### 3. Attack Surface Discovery & Fingerprinting (NEW)
-The engine passively measures everything that loads dynamically on the page:
-- **Tech Stack Fingerprinting:** Injects into the DOM to evaluate globals (`window.React`, `__NEXT_DATA__`, `window.Vue`) to instantly footprint the target stack.
-- **Input & Form Discovery:** Queries the DOM for `<form>`, `<input type="password">`, and `<input type="file">` to expose exactly where the interactive risk lies.
-- **3rd-Party & API Inventory:** Hooks Puppeteer's network interceptors to capture all external domains contacted and internal APIs invoked.
+### Attack surface discovery & fingerprinting
+For the primary page, the engine also:
+- Fingerprints the front-end stack (React, Vue, Next.js, Angular) by probing DOM globals.
+- Inventories every `<form>`, `input[type="password"]`, and `input[type="file"]` on the page.
+- Builds a full inventory of third-party domains, loaded scripts, and XHR/fetch API calls observed via Puppeteer's network interception.
 
-### 4. Advanced JS Payload Secret Hunting (NEW)
-While most scanners check HTML bodies and HTTP headers, AccessLens listens to the `page.on('response')` stream to run credential regexes over the raw `.text()` of all loaded `.js` bundles. It instantly catches AWS keys, Stripe tokens, or Firebase configs baked into Webpack/Vite chunks.
+### JS payload secret scanning
+Every `.js` response body is scanned against a regex for common credential shapes (AWS access keys, Stripe live keys, JWT-looking tokens) — not just headers or HTML, which is where most scanners stop.
 
-### 5. Console & Page Error Capture (NEW)
-Leverages `page.on('console')` and `page.on('pageerror')` to capture broken CSP directives, CORS blocks, strict-origin failures, and React hydration errors exactly as the browser experiences them.
+### Console & runtime error capture
+`page.on('console')` and `page.on('pageerror')` capture CSP violations, CORS failures, and JS/hydration errors exactly as the browser sees them, and surface them alongside the findings.
 
-### 6. Profiling & Code Coverage (NEW)
-Uses the native Chrome DevTools Protocol (`page.createCDPSession()`) to spin up `Profiler.startPreciseCoverage`, capturing V8 engine code coverage and performance metrics dynamically with zero external dependencies.
+### Code coverage via CDP
+A Chrome DevTools Protocol session (`Profiler.startPreciseCoverage`) runs for the duration of the scan with zero extra dependencies, and the number of covered files is reported.
 
-### 7. Server-Sent Events (SSE) Live Streaming
-Scans stream live progress directly to the dashboard via SSE (`text/event-stream`). You see real-time updates as the engine initializes the browser, discovers pages, waits for readiness, analyzes security, and generates the report.
+### Live progress via Server-Sent Events
+`POST /api/scan` responds with a `text/event-stream`. The dashboard renders each phase as it happens — initializing the browser, loading the page, waiting for readiness, running accessibility checks, running security checks, building the attack surface, generating the report — instead of a single opaque spinner.
 
-### 8. Premium Industrial Dashboard
-The UI is a highly styled, dark-tech React application built with Tailwind CSS and Framer Motion. 
-- **Visual Issue Inspector:** See the actual rendered screenshot of the page with the exact problematic elements highlighted alongside issue evidence.
-- **Bento-Grid Metrics:** High-density, high-contrast typography using `Space Grotesk` and `JetBrains Mono`.
+### Context-aware security engine
+Findings aren't judged in a vacuum:
+- A cookie missing `HttpOnly` is scored **high** if it looks like a session/auth token, but only **info** if it looks like a CSRF token (where client-side readability is often intentional).
+- Clickjacking protection is only flagged missing if *both* `X-Frame-Options` **and** a CSP `frame-ancestors` directive are absent.
+- Mixed content on scripts/stylesheets is scored higher than on images.
 
-### 9. Context-Aware Security Engine
-Unlike naive scanners, AccessLens evaluates the context of security findings:
-- Detects missing `HttpOnly` flags but intelligently downgrades the severity to INFO if the cookie is explicitly named like a CSRF token.
+### AI-generated explanations and fixes
+`POST /api/explain` sends a batch of raw findings to Claude once (not per-finding) and gets back, for each: a plain-English summary, who is affected and why it matters, a suggested fix, and (where applicable) corrected code — grounded strictly in the evidence collected during the scan. Results are cached in memory by a hash of the finding set so re-scanning the same page doesn't burn tokens twice. If no `ANTHROPIC_API_KEY` is configured, the endpoint degrades gracefully and returns the raw finding text instead of failing.
+
+### Demo mode
+Because live scans depend on the target site being reachable and not blocking headless browsers, `POST /api/scan` accepts a `demo: true` flag that returns pre-captured fixture data instantly instead of launching a browser — useful for live demos, judging, or offline development.
+
+## Architecture
+
+```text
+React (Vite) — dashboard
+   |  fetch + SSE
+   v
+Express API  ── /api/health, /api/demo-sites, /api/scan (SSE), /api/explain
+   |
+   v
+Puppeteer (headless Chromium)
+   ├── CDP: Profiler.startPreciseCoverage (code coverage)
+   ├── Core: Application Readiness Engine (DOM mutation + network + spinner tracking)
+   ├── Scanner 1: axe-core                    → accessibility findings
+   └── Scanner 2: custom security scanner      → headers, cookies, CORS, transport, secrets
+   |
+   v
+Finding normalizer + risk scoring  →  unified report JSON
+   |
+   v
+Claude API (optional)  →  plain-English explanations + suggested fixes
+```
+
+## Project structure
+
+```text
+access/
+├── backend/
+│   ├── src/
+│   │   ├── server.js                        Express app, routes, SSRF guardrails
+│   │   ├── services/
+│   │   │   ├── scanner.js                    Orchestrates the Puppeteer scan
+│   │   │   ├── explainer.js                  Claude API integration + caching
+│   │   │   ├── scanners/
+│   │   │   │   ├── axeScanner.js             Injects and runs axe-core
+│   │   │   │   ├── securityScanner.js        Header/cookie/CORS/secret checks
+│   │   │   │   └── core/
+│   │   │   │       └── applicationReadiness.js   Readiness-detection engine
+│   │   │   ├── analysis/
+│   │   │   │   ├── findingNormalizer.js      Normalizes axe + security findings to one shape
+│   │   │   │   └── riskEngine.js             Scoring helper
+│   │   │   └── fixtures/
+│   │   │       └── demo-data.json            Pre-captured scan results for demo mode
+│   │   └── ...
+│   └── .env.example
+├── frontend/
+│   └── src/
+│       ├── App.jsx                           Top-level view/state
+│       ├── components/
+│       │   ├── ScanInput.jsx                 URL field, example sites, demo/quick/deep toggle
+│       │   ├── LoadingState.jsx               Live phase narration (via SSE)
+│       │   ├── PosturePanel.jsx / PostureBreakdown.jsx   Score + severity breakdown
+│       │   ├── FindingList.jsx                Filterable, expandable finding list
+│       │   ├── AttackSurface.jsx              Fingerprint, domains, scripts, APIs, cookies
+│       │   ├── SecurityControls.jsx           PASS/FAIL/WARN control summary
+│       │   ├── VisualWorkspace.jsx            Screenshot + highlighted elements
+│       │   └── ErrorState.jsx
+│       └── lib/
+│           ├── api.js                         Fetch + SSE client for the backend
+│           └── history.js                     localStorage-based scan history
+├── package.json                               Root scripts (install:all, dev)
+└── PROMPTS.md                                 The build prompts this project was built from
+```
+
+## Getting started
+
+Requires **Node.js 18+**.
+
+```bash
+# From the repo root
+npm run install:all
+
+# Add your Anthropic key to enable AI explanations (optional — see Demo mode)
+cp backend/.env.example backend/.env
+# then edit backend/.env
+
+npm run dev
+```
+
+This runs the backend on **http://localhost:4000** and the frontend on **http://localhost:5173** concurrently. The Vite dev server proxies `/api/*` to the backend, so just open the frontend URL.
+
+To run each side individually:
+
+```bash
+# Backend only (auto-restarts on change via --watch)
+npm run dev --prefix backend
+
+# Frontend only
+npm run dev --prefix frontend
+```
+
+Production build of the frontend:
+
+```bash
+npm run build --prefix frontend
+npm run preview --prefix frontend
+```
+
+## Environment variables
+
+Set these in `backend/.env` (see `backend/.env.example`):
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PORT` | No | `4000` | Port the Express server listens on. |
+| `ANTHROPIC_API_KEY` | No | — | Enables `/api/explain`. Without it, the endpoint returns the raw finding text instead of an AI-generated explanation, rather than failing. |
+| `CLAUDE_MODEL` | No | `claude-sonnet-5` | Model used for the explanation/remediation copilot. |
+
+## API reference
+
+All routes are served under `/api`.
+
+### `GET /api/health`
+Returns `{ ok: true }`. Used for liveness checks.
+
+### `GET /api/demo-sites`
+Returns the list of URLs that have pre-captured fixture data available for demo mode.
+
+### `POST /api/scan`
+Runs a scan and streams progress as Server-Sent Events.
+
+**Request body**
+
+```json
+{
+  "url": "https://example.com",
+  "demo": false,
+  "mode": "quick"
+}
+```
+
+- `url` — required. Scheme is optional; `https://` is assumed if omitted.
+- `demo` — optional. If `true` and `url` matches a fixture, the pre-captured report is returned instantly (no browser launched).
+- `mode` — optional, `"quick"` (default, single page) or `"deep"` (crawls up to 10 same-origin pages).
+
+**Response** — `text/event-stream`. Each event is a JSON payload on one of three shapes:
+
+```jsonc
+// progress
+{ "type": "progress", "phase": "Analyzing accessibility", "data": { "url": "..." } }
+
+// success (final event)
+{ "type": "done", "report": { /* full report, see below */ } }
+
+// failure (final event)
+{ "type": "error", "error": "SCAN_FAILED", "message": "..." }
+```
+
+Non-SSE error cases (returned as plain JSON with an HTTP error status, before streaming starts):
+
+| Status | `error` | Cause |
+|---|---|---|
+| 400 | `MISSING_URL` | No `url` in the request body. |
+| 400 | `INVALID_URL` | URL failed to parse or used an unsupported protocol. |
+| 403 | `FORBIDDEN_URL` | URL resolves to a loopback/internal address (SSRF protection). |
+
+**Report shape** (the `report` field of the `done` event):
+
+```jsonc
+{
+  "url": "https://example.com",
+  "scannedAt": "2026-09-20T12:00:00.000Z",
+  "scanMode": "quick",
+  "readiness": { "state": "READY", "waitedMs": 1800, "confidence": "HIGH", "signals": { /* ... */ } },
+  "accessibilityHealth": 92,
+  "accessibilityCounts": { "critical": 0, "serious": 1, "moderate": 2, "minor": 0 },
+  "securityPosture": 70,
+  "securityCounts": { "critical": 0, "high": 1, "medium": 1, "low": 0, "info": 2 },
+  "accessibilityFindings": [ /* normalized axe violations */ ],
+  "securityFindings": [ /* normalized security findings */ ],
+  "securityControls": { "https": "PASS", "csp": "FAIL", "hsts": "WARN", "cookies": "PASS", "cors": "PASS", "clickjacking": "PASS" },
+  "attackSurface": {
+    "pages": 1,
+    "apis": [ /* ... */ ],
+    "scripts": [ /* ... */ ],
+    "domains": [ /* third-party domains contacted */ ],
+    "cookies": [ /* ... */ ],
+    "stackFingerprint": { "react": true, "vue": false, "nextjs": false, "angular": false },
+    "exposedInputs": [ /* truncated outerHTML of forms/password/file inputs */ ],
+    "consoleErrors": [ /* ... */ ],
+    "pageErrors": [ /* ... */ ],
+    "coverageFiles": 12
+  },
+  "screenshot": "data:image/jpeg;base64,..."
+}
+```
+
+### `POST /api/explain`
+
+**Request body**
+
+```json
+{ "findings": [ /* array of normalized findings from a scan report */ ] }
+```
+
+**Response** — an object keyed by finding `id`:
+
+```jsonc
+{
+  "SEC-CSP-001": {
+    "summary": "...",
+    "whyItMatters": "...",
+    "whoIsAffected": "...",
+    "suggestedFix": "...",
+    "correctedCode": "...",
+    "explanation": "...",
+    "confidence": "high"
+  }
+}
+```
+
+Errors return `502 { "error": "EXPLAIN_FAILED", "message": "..." }` if the upstream Claude API call fails.
+
+## Scan modes
+
+| Mode | Pages crawled | When to use |
+|---|---|---|
+| `quick` | 1 (the URL you gave) | Fast feedback on a single page. |
+| `deep` | Up to 10, same-origin, discovered via same-origin `<a href>` links | Understanding risk across a whole site/section. |
+
+## Scoring
+
+Both scores start at 100 and are penalized per finding by severity:
+
+- **Accessibility health** — `100 − (12 × critical + 6 × serious + 3 × moderate + 1 × minor)`, floored at 0.
+- **Security posture** — `100 − (25 × critical + 15 × high + 5 × medium + 2 × low)`, floored at 0.
+
+Info-level findings never affect either score.
+
+## Demo mode
+
+Live scans depend on the target site being reachable, allowing headless browsers, and not blocking the scanner's IP — none of which are guaranteed at demo/judging time. Setting `demo: true` (and using one of the URLs from `GET /api/demo-sites`) skips the browser entirely and returns a fixture report instantly. This is a safety net for presentations, not a substitute for a real scan — the UI should label it clearly whenever it's active.
+
+## Tech stack
+
+| Layer | Tools |
+|---|---|
+| Frontend | React 18, Vite, Tailwind CSS, Framer Motion, Phosphor Icons |
+| Backend | Node.js (ES modules), Express, Puppeteer |
+| Accessibility scanning | axe-core |
+| AI copilot | Claude API (`claude-sonnet-5` by default) |
+| Transport | REST + Server-Sent Events |
+
+## Safety & scope
+
+- The backend rejects scans of `localhost`, loopback, and private/internal IP ranges (`10.x`, `172.16–31.x`, `192.168.x`, `::1`) unless running in demo mode, as basic SSRF protection.
+- The in-browser request interceptor also aborts any request the page itself tries to make to loopback addresses or the cloud metadata IP (`169.254.169.254`).
+- Each page load is capped at a hard timeout, and readiness polling is capped separately, so a single hung page can't stall a deep scan indefinitely.
+- Deep mode is capped at 10 pages per scan.
+
+## Roadmap
+
+Ideas for turning this from a project into a product:
+
+- CI/CD integration (fail a build on new critical findings, post results as a PR comment).
+- A browser extension for auditing pages behind auth without exposing credentials to the scanner.
+- Scheduled/recurring monitoring with alerting on regressions.
+- Persistent storage for scan history (currently the frontend keeps a lightweight history in `localStorage`; there's no database yet).
+- Team accounts, shareable report links, and exportable PDF reports.- Detects missing `HttpOnly` flags but intelligently downgrades the severity to INFO if the cookie is explicitly named like a CSRF token.
 - Validates missing Clickjacking protections by checking *both* `X-Frame-Options` and modern `Content-Security-Policy frame-ancestors`.
 
 ### 10. Fix Verification & AI Explanations
